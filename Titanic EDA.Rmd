@@ -1,0 +1,402 @@
+---
+title: "Titanic Dataset Project"
+author: "Anfernee Charles"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r reading data}
+library(tidyverse)
+library(naniar)
+library(explore)
+library(DataExplorer)
+library(dplyr)
+library(simputation)
+```
+
+```{r}
+library(cowplot)
+library(mice)
+
+
+train <- read_csv("data/Titanic Dataset/train.csv")
+
+df <- train
+
+df |> head(10)
+
+```
+
+# Data dictionary:
+
+## Variable Definition Key
+
+-   **Survival**, Survival 0 = No, 1 = Yes
+-   **Pclass**, Ticket class 1 = 1st, 2 = 2nd, 3 = 3rd
+-   **Sex**, Sex
+-   **Age**, Age in years
+-   **Sibsp**, \# of siblings / spouses aboard the Titanic
+-   **Parch**, \# of parents / children aboard the Titanic
+-   **Ticket**, Ticket number
+-   **Fare**, Passenger fare
+-   **Cabin**, Cabin number
+-   **Embarked**, Port of Embarkation C = Cherbourg, Q = Queenstown, S = Southampton
+
+```{r}
+
+df |> describe() 
+```
+
+```{r}
+## Renaming variables for better readability
+
+df <- df |>
+  rename("siblings_spouses_aboard" = "SibSp",
+         "parents_children_aboard" = "Parch",
+         "port_of_embarkment" = "Embarked")
+```
+
+```{r}
+## changing character dtypes into factor
+
+df$Name <- as.factor(df$Name)
+
+df$Sex <- as.factor(df$Sex)
+
+df$Ticket <- as.factor(df$Ticket)
+
+df$Cabin <- as.factor(df$Cabin)
+
+df$port_of_embarkment <- as.factor(df$port_of_embarkment)
+
+```
+
+```{r}
+
+## Analyzing the dataset
+
+plot_intro(df)
+```
+
+
+```{r missing values}
+## Viewing missing values
+
+vis_miss(df)
+```
+
+```{r}
+visdat::vis_dat(df)
+```
+
+# Missing values
+
+## 8.1% of the total data set contain missing values
+
+## Cabin has 77% missing values, with Age having 20%.
+
+```{r}
+# dropping Name, Cabin, PassengerID and Ticket because they'll have no influence on the prediction of the target variable.
+
+df <- df |> select(-Cabin, -Name, -Ticket, -PassengerId)
+```
+
+```{r}
+plot_density(df)
+```
+
+```{r focusing on Age}
+
+plot_density(df$Age)
+
+```
+
+
+
+# Exploring different methods of imputation
+
+```{r using simputation on Age}
+
+# Iteration #1
+
+Age_imp <- df |>
+  bind_shadow() |>
+  impute_lm(Age ~ Pclass) |>
+  add_label_shadow()
+
+ggplot(Age_imp,
+       aes(x = Age,
+           fill = any_missing)) + 
+  geom_density(alpha = 0.3) + 
+  scale_fill_brewer(palette = "Dark2") +
+  theme(legend.position = "bottom")
+```
+
+```{r}
+
+#Iteration #2
+# adding all other features to the imputation
+
+Age_imp <- df |>
+  bind_shadow() |>
+  impute_lm(Age ~ Pclass + Sex + Fare + port_of_embarkment + siblings_spouses_aboard) |>
+  add_label_shadow()
+
+ggplot(Age_imp,
+       aes(x = Age,
+           fill = any_missing)) + 
+  geom_density(alpha = 0.3) + 
+  scale_fill_brewer(palette = "Dark2") +
+  theme(legend.position = "bottom")
+
+```
+
+```{r }
+#Iteration #3
+
+# creating a data frame with imputed values and creating a plot that compares it to the original data
+
+
+Age_imp <- data.frame(
+  original = df$Age,
+  imputed_zero = replace(df$Age, is.na(df$Age), 0),
+  imputed_mean = replace(df$Age, is.na(df$Age), mean(df$Age, na.rm = TRUE)),
+  imputed_median = replace(df$Age, is.na(df$Age), median(df$Age, na.rm = TRUE))
+)
+
+
+
+
+h1 <- ggplot(Age_imp, aes(x = original)) +
+  geom_histogram(fill = "tomato", color = "#000000", position = "identity", bins = 50) +
+  ggtitle("Original distribution") +
+  theme_classic()
+
+h2 <- ggplot(Age_imp, aes(x = imputed_zero)) +
+  geom_histogram(fill = "green", color = "#000000", position = "identity", bins = 50) +
+  ggtitle("Zero-imputed distribution") +
+  theme_classic()
+
+h3 <- ggplot(Age_imp, aes(x = imputed_mean)) +
+  geom_histogram(fill = "royalblue", color = "#000000", position = "identity", bins = 50) +
+  ggtitle("Mean-imputed distribution") +
+  theme_classic()
+
+h4 <- ggplot(Age_imp, aes(x = imputed_median)) +
+  geom_histogram(fill = "gold", color = "#000000", position = "identity", bins = 50) +
+  ggtitle("Median-imputed distribution") +
+  theme_classic()
+
+plot_grid(h1, h2, h3, h4, nrow = 2, ncol = 2)
+
+```
+
+## All of the above distributions were severely impacted when compared to the original distribution.
+
+```{r using MICE}
+# iteration #4 using Multivariate Imputation via Chained Equations (MICE)
+
+numeric_cols <- df |>
+  select(Pclass, siblings_spouses_aboard, parents_children_aboard, Age)
+```
+
+```{r}
+mice_imp <- data.frame(
+  original = df$Age,
+  pmm_imp = complete(mice(numeric_cols, method = "pmm"))$Age,
+  cart_imp = complete(mice(numeric_cols, method = "cart"))$Age,
+  lasso_imp = complete(mice(numeric_cols, method = "lasso.norm"))$Age
+  
+)
+
+
+```
+
+```{r}
+
+mh1 <- ggplot(mice_imp, aes(x = original)) +
+  geom_histogram(fill = "tomato", color = "#000000", position = "identity", bins = 50) +
+  ggtitle("Original distribution") +
+  theme_classic()
+
+mh2 <- ggplot(mice_imp, aes(x = pmm_imp)) +
+  geom_histogram(fill = "green", color = "#000000", position = "identity", bins = 50) +
+  ggtitle("PMM-imputed distribution") +
+  theme_classic()
+
+mh3 <- ggplot(mice_imp, aes(x = cart_imp)) +
+  geom_histogram(fill = "royalblue", color = "#000000", position = "identity", bins = 50) +
+  ggtitle("CART-imputed distribution") +
+  theme_classic()
+
+mh4 <- ggplot(mice_imp, aes(x = lasso_imp)) +
+  geom_histogram(fill = "gold", color = "#000000", position = "identity", bins = 50) +
+  ggtitle("Lasso-imputed distribution") +
+  theme_classic()
+
+
+plot_grid(mh1, mh2, mh3, mh4, nrow = 2, ncol = 2)
+```
+
+# CART imputed Age distribution looks the closest to the original distribution
+
+```{r}
+#replacing values in age with imputed values from CART imputation 
+
+df$Age[is.na(df$Age)] <- mice_imp$cart_imp[is.na(df$Age)]
+```
+
+```{r}
+# verifying change in distribution
+
+test <- ggplot(df, aes(x = Age)) +
+  geom_histogram(fill = "gold", color = "#000000", position = "identity", bins = 50) +
+  ggtitle("imputed distribution") +
+  theme_classic()
+
+
+plot_grid(mh1, test, ncol = 2, nrow = 1)
+
+```
+
+```{r}
+# addressing port of embarkment's 2 missing values
+
+missn <- is.na(df$port_of_embarkment) |> which() |>
+  data.frame()
+```
+
+```{r}
+# row 830 & 62 have missing values. viewing the corresponding fare and Pclass
+
+df[c(62, 830), ('Pclass')][1]
+
+
+df[c(62, 830), ('Fare')][1]
+
+
+# they were both in first class and their fare was $80. replacing missing port of embarkment vals with the mode
+
+
+mode <- names(table(df$port_of_embarkment))[which.max(table(df$port_of_embarkment))]
+
+
+df$port_of_embarkment[c(62,830)] <- mode
+
+```
+```{r}
+
+ggplot(data=df, aes(port_of_embarkment, fill = factor(Survived))) + 
+  geom_bar(stat = "count", position = "dodge") + 
+  xlab("Port of Embarkment") + 
+  scale_fill_discrete(name = "Survived") + 
+  ggtitle("Survivors by Port of Embarkment")
+```
+
+
+## Feature Creation
+
+```{r}
+# creating a column to distinguish between child and adult
+
+df <- df |> mutate(Child = if_else(df$Age >= 18, 'Adult','Child'))
+```
+
+```{r}
+# viewing how many children and adults survived
+
+table(df$Child, df$Survived)
+```
+
+## 474 and 75 Adults and children died respectively, while 277 and 65 Adults and Children survived, respectively.
+
+```{r}
+# changing Child column to factor
+
+df$Child <- as.factor(df$Child)
+```
+
+```{r}
+# creating a plot showing amount of children and adults that survived
+
+ggplot(data=df, aes(Child, fill = factor(Survived))) + 
+  geom_bar(stat = "count", position = "dodge") + 
+  xlab("Adults and Children") + 
+  scale_fill_discrete(name = "Survived") + 
+  ggtitle("Survivors by Number of Adults or Children")
+```
+
+```{r}
+# creating a relatives aboard variable
+
+df <- df |> mutate(Relatives_aboard = df$siblings_spouses_aboard + df$parents_children_aboard)
+
+
+```
+
+```{r}
+# discretizing the family size variable
+
+df$Family_size[df$Relatives_aboard == 1] <- 'Single'
+df$Family_size[df$Relatives_aboard < 5 & df$Relatives_aboard > 1] <- 'Small'
+df$Family_size[df$Relatives_aboard > 4] <- 'Large'
+df$Family_size[df$Relatives_aboard == 0] <- 'None'
+
+# changing data type to factor
+
+df$Family_size <- as.factor(df$Family_size)
+```
+```{r}
+# creating a plot of family size to view which category had the highest survival count
+
+ggplot(data=df, aes(Family_size, fill = factor(Survived))) + 
+  geom_bar(stat = "count", position = "dodge") + 
+  xlab("Family size") + 
+  scale_fill_discrete(name = "Survived") + 
+  ggtitle("Survivors by Family size")
+```
+
+
+```{r}
+# looking at the relationship of all the categorical features with survived
+
+plot_bar(df, by = "Survived")
+```
+
+
+
+## Women were more likely to survive then men
+
+## persons from port of embarkation C (Cherbourg) had a higher survival rate
+
+## more children (< 18 y/o) survived than adults
+
+## Single and small (<4) family sizes were more likely to survive
+
+
+
+
+
+```{r}
+
+
+```
+
+
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+
+```
