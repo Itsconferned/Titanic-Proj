@@ -444,18 +444,30 @@ plot_bar(df_train, by = "Survived")
 
 
 
-## * Women were more likely to survive then men
 
-## * persons from port of embarkation C (Cherbourg) had a higher survival rate
 
-## * more children (< 18 y/o) survived than adults
+### * Women were more likely to survive then men
 
-## * Single and small (<4) family sizes were more likely to survive
+### * persons from port of embarkation C (Cherbourg) had a higher survival rate
+
+### * more children (< 18 y/o) survived than adults
+
+### * Single and small (<4) family sizes were more likely to survive
+
+
+
+
+
+
 
 
 
 # Correlation plots and feature importance
 ## * generating the pp score
+
+
+
+
 
 ```{r}
 survived_ppsr_score <- df_train |>
@@ -478,7 +490,11 @@ df_train |> visualize_pps(y = "Survived", do_parallel = TRUE)
 
 
 
-## * Sex has the highest pp score, while relatives_aboard, family size, Pclass and Fare have lower pp scores
+### * Sex has the highest pp score, while relatives_aboard, family size, Pclass and Fare have lower pp scores
+
+
+
+
 
 
 ```{r}
@@ -513,9 +529,12 @@ survived_binned_tbl |>
 
 
 
+### * Sex = Female, Pclass = 1, Fare > $31, Family_size = small and port_of_embarkment = C are all positively related to survived = 1.
 
 
-## * Sex = Female, Pclass = 1, Fare > $31, Family_size = small and port_of_embarkment = C are all positively related to survived = 1.
+
+
+
 
 
 
@@ -550,41 +569,63 @@ X_test <- testing(X_train_split)
 # using random forest to fit model
 
 X_train_rf <- X_train[c("Sex", "Family_size", "Pclass", "Fare")]
-y_rf <- as.factor(X_train$Survived)
+X_test_rf <- X_test[c("Sex", "Family_size", "Pclass", "Fare")]
+y_train <- as.factor(X_train$Survived)
 
 set.seed(27)
-rf <- randomForest(x = X_train_rf, y = y_rf, importance = TRUE, ntree = 1000)
+rf <- randomForest(x = X_train_rf, y = y_train, importance = TRUE, ntree = 1000)
 
 rf
 
 ```
+
+
 ```{r}
-X_test_submit <- X_test[c("Sex", "Family_size", "Pclass", "Fare")]
+predictions <- predict(rf, X_test_rf)
 
-X_test_submit
-```
-```{r}
-
-rf_pred <- predict(rf, X_test_submit)
-
-table(rf_pred)
-
-
-
+table(predictions)
 ```
 
 ```{r}
-# predicting on test set
+library(caret)
 
-rf_pred1 <- predict(rf, df_test)
+confusion <- confusionMatrix(predictions, as.factor(X_test$Survived))
+```
 
-rf_predict <- data.frame(PassengerId = rep(1:417), Survived = rf_pred1)
 
-write.csv(rf_predict, file = "RF_Predict.csv")
+```{r}
+print(confusion)
+accuracy <- confusion$overall["Accuracy"]
+print(paste("Accuracy:", accuracy))
+```
+
+
+```{r}
+
+submission <- predict(rf, df_test)
+
+table(submission)
+
 
 
 ```
 
+
+```{r}
+final_submission <- data.frame(PassengerId = rep(1:417), Survived = submission)
+
+
+```
+
+```{r}
+write.csv(final_submission, file = "RF_Prediction.csv")
+```
+
+```{r}
+
+```
+
+```{r}
 
 
 
