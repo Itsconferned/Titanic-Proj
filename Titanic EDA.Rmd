@@ -614,18 +614,13 @@ table(submission)
 ```{r}
 final_submission <- data.frame(PassengerId = rep(1:417), Survived = submission)
 
-
 ```
 
 ```{r}
 write.csv(final_submission, file = "RF_Prediction.csv")
 ```
 
-```{r}
 
-```
-
-```{r}
 
 
 
