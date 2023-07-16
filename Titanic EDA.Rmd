@@ -1,6 +1,6 @@
 ---
 title: "Titanic Dataset Project"
-author: "Anfernee Charles"
+author: "Anfernee Charles, Shannon-Rae Hackett, Leeza, Vishal"
 date: "`r Sys.Date()`"
 output: html_document
 ---
@@ -16,6 +16,16 @@ library(explore)
 library(DataExplorer)
 library(dplyr)
 library(simputation)
+library(ppsr) 
+library(correlationfunnel)
+library(tidymodels)
+library(xgboost)
+library(vip)
+library(randomForest)
+library(readxl)
+library(rpart)
+
+
 ```
 
 ```{r}
@@ -23,13 +33,21 @@ library(cowplot)
 library(mice)
 
 
-train <- read_csv("data/Titanic Dataset/train.csv")
+train <- read_excel("C:/Users/anfer/OneDrive/Desktop/Module 4/FinalProject/CSV/CSV/train.xlsx")
 
-df <- train
+test <- read_excel("C:/Users/anfer/OneDrive/Desktop/Module 4/FinalProject/CSV/CSV/test.xlsx")
 
-df |> head(10)
+df_train <- train
+df_test <- test
+
+df_train |> head(10)
 
 ```
+```{r}
+df_test |> head(10)
+```
+
+
 
 # Data dictionary:
 
@@ -47,31 +65,61 @@ df |> head(10)
 -   **Embarked**, Port of Embarkation C = Cherbourg, Q = Queenstown, S = Southampton
 
 ```{r}
-
-df |> describe() 
+df_train |> describe() 
 ```
+
+```{r}
+df_test |> describe()
+```
+
 
 ```{r}
 ## Renaming variables for better readability
 
-df <- df |>
+ df_train <- df_train |>
   rename("siblings_spouses_aboard" = "SibSp",
          "parents_children_aboard" = "Parch",
          "port_of_embarkment" = "Embarked")
 ```
 
 ```{r}
+# doing the same on the test data
+
+df_test <- df_test |>
+  rename("siblings_spouses_aboard" = "SibSp",
+         "parents_children_aboard" = "Parch",
+         "port_of_embarkment" = "Embarked")
+```
+
+
+```{r}
 ## changing character dtypes into factor
 
-df$Name <- as.factor(df$Name)
+df_train$Name <- as.factor(df_train$Name)
 
-df$Sex <- as.factor(df$Sex)
+df_train$Sex <- as.factor(df_train$Sex)
 
-df$Ticket <- as.factor(df$Ticket)
+df_train$Ticket <- as.factor(df_train$Ticket)
 
-df$Cabin <- as.factor(df$Cabin)
+df_train$Cabin <- as.factor(df_train$Cabin)
 
-df$port_of_embarkment <- as.factor(df$port_of_embarkment)
+df_train$port_of_embarkment <- as.factor(df_train$port_of_embarkment)
+
+
+
+df_test$Name <- as.factor(df_test$Name)
+
+df_test$Sex <- as.factor(df_test$Sex)
+
+df_test$Ticket <- as.factor(df_test$Ticket)
+
+df_test$Cabin <- as.factor(df_test$Cabin)
+
+df_test$port_of_embarkment <- as.factor(df_test$port_of_embarkment)
+
+
+
+
 
 ```
 
@@ -79,39 +127,54 @@ df$port_of_embarkment <- as.factor(df$port_of_embarkment)
 
 ## Analyzing the dataset
 
-plot_intro(df)
+plot_intro(df_train)
+```
+
+
+```{r}
+plot_intro(df_test)
 ```
 
 
 ```{r missing values}
 ## Viewing missing values
 
-vis_miss(df)
+vis_miss(df_train)
 ```
 
 ```{r}
-visdat::vis_dat(df)
+vis_miss(df_test)
+```
+
+```{r}
+visdat::vis_dat(df_train)
+```
+
+
+```{r}
+visdat::vis_dat(df_test)
 ```
 
 # Missing values
 
-## 8.1% of the total data set contain missing values
-
-## Cabin has 77% missing values, with Age having 20%.
+## 8.1% of the total training data set contain missing values, and 9% of the total test data set contain missing values. Cabin has 77% missing values, with Age having 20%.
 
 ```{r}
 # dropping Name, Cabin, PassengerID and Ticket because they'll have no influence on the prediction of the target variable.
 
-df <- df |> select(-Cabin, -Name, -Ticket, -PassengerId)
+df_train <- df_train |> select(-Cabin, -Name, -Ticket, -PassengerId)
+
+df_test <- df_test |> select(-Cabin, -Name, -Ticket, -PassengerId)
+
 ```
 
 ```{r}
-plot_density(df)
+plot_density(df_train)
 ```
 
 ```{r focusing on Age}
 
-plot_density(df$Age)
+plot_density(df_train$Age)
 
 ```
 
@@ -123,7 +186,7 @@ plot_density(df$Age)
 
 # Iteration #1
 
-Age_imp <- df |>
+Age_imp <- df_train |>
   bind_shadow() |>
   impute_lm(Age ~ Pclass) |>
   add_label_shadow()
@@ -141,7 +204,7 @@ ggplot(Age_imp,
 #Iteration #2
 # adding all other features to the imputation
 
-Age_imp <- df |>
+Age_imp <- df_train |>
   bind_shadow() |>
   impute_lm(Age ~ Pclass + Sex + Fare + port_of_embarkment + siblings_spouses_aboard) |>
   add_label_shadow()
@@ -162,10 +225,10 @@ ggplot(Age_imp,
 
 
 Age_imp <- data.frame(
-  original = df$Age,
-  imputed_zero = replace(df$Age, is.na(df$Age), 0),
-  imputed_mean = replace(df$Age, is.na(df$Age), mean(df$Age, na.rm = TRUE)),
-  imputed_median = replace(df$Age, is.na(df$Age), median(df$Age, na.rm = TRUE))
+  original = df_train$Age,
+  imputed_zero = replace(df_train$Age, is.na(df_train$Age), 0),
+  imputed_mean = replace(df_train$Age, is.na(df_train$Age), mean(df_train$Age, na.rm = TRUE)),
+  imputed_median = replace(df_train$Age, is.na(df_train$Age), median(df_train$Age, na.rm = TRUE))
 )
 
 
@@ -200,13 +263,13 @@ plot_grid(h1, h2, h3, h4, nrow = 2, ncol = 2)
 ```{r using MICE}
 # iteration #4 using Multivariate Imputation via Chained Equations (MICE)
 
-numeric_cols <- df |>
+numeric_cols <- df_train |>
   select(Pclass, siblings_spouses_aboard, parents_children_aboard, Age)
 ```
 
 ```{r}
 mice_imp <- data.frame(
-  original = df$Age,
+  original = df_train$Age,
   pmm_imp = complete(mice(numeric_cols, method = "pmm"))$Age,
   cart_imp = complete(mice(numeric_cols, method = "cart"))$Age,
   lasso_imp = complete(mice(numeric_cols, method = "lasso.norm"))$Age
@@ -247,55 +310,47 @@ plot_grid(mh1, mh2, mh3, mh4, nrow = 2, ncol = 2)
 ```{r}
 #replacing values in age with imputed values from CART imputation 
 
-df$Age[is.na(df$Age)] <- mice_imp$cart_imp[is.na(df$Age)]
+df_train$Age[is.na(df_train$Age)] <- mice_imp$cart_imp[is.na(df_train$Age)]
+
+df_test$Age[is.na(df_test$Age)] <- mice_imp$cart_imp[is.na(df_test$Age)]
 ```
+
 
 ```{r}
 # verifying change in distribution
 
-test <- ggplot(df, aes(x = Age)) +
+train_plt <- ggplot(df_train, aes(x = Age)) +
   geom_histogram(fill = "gold", color = "#000000", position = "identity", bins = 50) +
   ggtitle("imputed distribution") +
   theme_classic()
 
 
-plot_grid(mh1, test, ncol = 2, nrow = 1)
+plot_grid(mh1, train_plt, ncol = 2, nrow = 1)
 
+```
+
+## Checking further missing values
+
+```{r}
+df_train |> describe()
 ```
 
 ```{r}
-# addressing port of embarkment's 2 missing values
-
-missn <- is.na(df$port_of_embarkment) |> which() |>
-  data.frame()
+df_test |> describe()
 ```
+
+
 
 ```{r}
-# row 830 & 62 have missing values. viewing the corresponding fare and Pclass
+# dropping all missing rows
 
-df[c(62, 830), ('Pclass')][1]
-
-
-df[c(62, 830), ('Fare')][1]
+df_train <- df_train |> drop_na()
 
 
-# they were both in first class and their fare was $80. replacing missing port of embarkment vals with the mode
-
-
-mode <- names(table(df$port_of_embarkment))[which.max(table(df$port_of_embarkment))]
-
-
-df$port_of_embarkment[c(62,830)] <- mode
+df_test <- df_test |> drop_na()
 
 ```
-```{r}
 
-ggplot(data=df, aes(port_of_embarkment, fill = factor(Survived))) + 
-  geom_bar(stat = "count", position = "dodge") + 
-  xlab("Port of Embarkment") + 
-  scale_fill_discrete(name = "Survived") + 
-  ggtitle("Survivors by Port of Embarkment")
-```
 
 
 ## Feature Creation
@@ -303,13 +358,17 @@ ggplot(data=df, aes(port_of_embarkment, fill = factor(Survived))) +
 ```{r}
 # creating a column to distinguish between child and adult
 
-df <- df |> mutate(Child = if_else(df$Age >= 18, 'Adult','Child'))
+df_train <- df_train |> mutate(Child = if_else(df_train$Age >= 18, 'Adult','Child'))
+
+
+df_test <- df_test |> mutate(Child = if_else(df_test$Age >= 18, 'Adult','Child'))
+
 ```
 
 ```{r}
 # viewing how many children and adults survived
 
-table(df$Child, df$Survived)
+table(df_train$Child, df_train$Survived)
 ```
 
 ## 474 and 75 Adults and children died respectively, while 277 and 65 Adults and Children survived, respectively.
@@ -317,13 +376,17 @@ table(df$Child, df$Survived)
 ```{r}
 # changing Child column to factor
 
-df$Child <- as.factor(df$Child)
+df_train$Child <- as.factor(df_train$Child)
+
+df_test$Child <- as.factor(df_test$Child)
+
+
 ```
 
 ```{r}
 # creating a plot showing amount of children and adults that survived
 
-ggplot(data=df, aes(Child, fill = factor(Survived))) + 
+ggplot(data=df_train, aes(Child, fill = factor(Survived))) + 
   geom_bar(stat = "count", position = "dodge") + 
   xlab("Adults and Children") + 
   scale_fill_discrete(name = "Survived") + 
@@ -333,27 +396,39 @@ ggplot(data=df, aes(Child, fill = factor(Survived))) +
 ```{r}
 # creating a relatives aboard variable
 
-df <- df |> mutate(Relatives_aboard = df$siblings_spouses_aboard + df$parents_children_aboard)
+df_train <- df_train |> mutate(Relatives_aboard = df_train$siblings_spouses_aboard + df_train$parents_children_aboard)
 
+df_test <- df_test |> mutate(Relatives_aboard = df_test$siblings_spouses_aboard + df_test$parents_children_aboard)
 
 ```
 
 ```{r}
 # discretizing the family size variable
 
-df$Family_size[df$Relatives_aboard == 1] <- 'Single'
-df$Family_size[df$Relatives_aboard < 5 & df$Relatives_aboard > 1] <- 'Small'
-df$Family_size[df$Relatives_aboard > 4] <- 'Large'
-df$Family_size[df$Relatives_aboard == 0] <- 'None'
+df_train$Family_size[df_train$Relatives_aboard == 1] <- 'Single'
+df_train$Family_size[df_train$Relatives_aboard < 5 & df_train$Relatives_aboard > 1] <- 'Small'
+df_train$Family_size[df_train$Relatives_aboard > 4] <- 'Large'
+df_train$Family_size[df_train$Relatives_aboard == 0] <- 'None'
+
+
+
+df_test$Family_size[df_test$Relatives_aboard == 1] <- 'Single'
+df_test$Family_size[df_test$Relatives_aboard < 5 & df_test$Relatives_aboard > 1] <- 'Small'
+df_test$Family_size[df_test$Relatives_aboard > 4] <- 'Large'
+df_test$Family_size[df_test$Relatives_aboard == 0] <- 'None'
+
+
 
 # changing data type to factor
 
-df$Family_size <- as.factor(df$Family_size)
+df_train$Family_size <- as.factor(df_train$Family_size)
+
+df_test$Family_size <- as.factor(df_test$Family_size)
 ```
 ```{r}
 # creating a plot of family size to view which category had the highest survival count
 
-ggplot(data=df, aes(Family_size, fill = factor(Survived))) + 
+ggplot(data=df_train, aes(Family_size, fill = factor(Survived))) + 
   geom_bar(stat = "count", position = "dodge") + 
   xlab("Family size") + 
   scale_fill_discrete(name = "Survived") + 
@@ -364,39 +439,152 @@ ggplot(data=df, aes(Family_size, fill = factor(Survived))) +
 ```{r}
 # looking at the relationship of all the categorical features with survived
 
-plot_bar(df, by = "Survived")
+plot_bar(df_train, by = "Survived")
 ```
 
 
 
-## Women were more likely to survive then men
+## * Women were more likely to survive then men
 
-## persons from port of embarkation C (Cherbourg) had a higher survival rate
+## * persons from port of embarkation C (Cherbourg) had a higher survival rate
 
-## more children (< 18 y/o) survived than adults
+## * more children (< 18 y/o) survived than adults
 
-## Single and small (<4) family sizes were more likely to survive
+## * Single and small (<4) family sizes were more likely to survive
 
 
 
+# Correlation plots and feature importance
+## * generating the pp score
+
+```{r}
+survived_ppsr_score <- df_train |>
+    score_predictors(y = 'Survived', do_parallel = TRUE) |>
+    as_tibble()
+
+survived_ppsr_score |> glimpse()
+
+```
+```{r}
+# plotting 1bar pps (predictive power score)
+
+df_train |> visualize_pps(y = "Survived", do_parallel = TRUE)
+
+
+```
+
+
+
+
+
+
+## * Sex has the highest pp score, while relatives_aboard, family size, Pclass and Fare have lower pp scores
 
 
 ```{r}
 
+#plotting a pps matrix to expand on feature relationships
+
+g <- df_train |>
+    visualize_pps(do_parallel = TRUE)
+
+g +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 ```
 
+
+```{r}
+# utilizing a correlation funnel which is a binary version of the correlation matrix
+
+survived_binned_tbl <- df_train |>
+    binarize()
+
+#survived_binned_tbl |> glimpse()
+
+survived_binned_tbl |>
+    correlate(target = Survived__1) |>
+    plot_correlation_funnel() +
+    geom_point(size = 3, color = "black")
+
+
+```
+
+
+
+
+
+
+## * Sex = Female, Pclass = 1, Fare > $31, Family_size = small and port_of_embarkment = C are all positively related to survived = 1.
+
+
+
+
+
+# Modelling
+
+
+```{r}
+ set.seed(27)
+
+X_train_split <- initial_split(df_train, prop = 0.7)
+
+X_train <- training(X_train_split)
+
+X_test <- testing(X_train_split)
+
+
+
+```
+
+
+```{r}
+#model1 <- glm(Survived ~ Sex + Pclass + Fare + Family_size + port_of_embarkment,
+           #   data = X_train, family = binomial(link = "logit"))
+
+```
 
 
 ```{r}
 
+# using random forest to fit model
+
+X_train_rf <- X_train[c("Sex", "Family_size", "Pclass", "Fare")]
+y_rf <- as.factor(X_train$Survived)
+
+set.seed(27)
+rf <- randomForest(x = X_train_rf, y = y_rf, importance = TRUE, ntree = 1000)
+
+rf
+
+```
+```{r}
+X_test_submit <- X_test[c("Sex", "Family_size", "Pclass", "Fare")]
+
+X_test_submit
+```
+```{r}
+
+rf_pred <- predict(rf, X_test_submit)
+
+table(rf_pred)
+
+
+
 ```
 
 ```{r}
+# predicting on test set
+
+rf_pred1 <- predict(rf, df_test)
+
+rf_predict <- data.frame(PassengerId = rep(1:417), Survived = rf_pred1)
+
+write.csv(rf_predict, file = "RF_Predict.csv")
+
 
 ```
 
-```{r}
 
 
-```
+
