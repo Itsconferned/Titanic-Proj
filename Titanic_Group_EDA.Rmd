@@ -1,0 +1,592 @@
+---
+title: "Titanic_Dataset_Project"
+author: "Anfernee Charles, Shannon-Rae Hackett, Leena Chandarjeet, Vishal Maharaj"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r reading data}
+library(tidyverse)
+library(naniar)
+library(explore)
+library(DataExplorer)
+library(dplyr)
+library(simputation)
+library(ppsr) 
+library(correlationfunnel)
+library(tidymodels)
+library(xgboost)
+library(vip)
+library(randomForest)
+library(readxl)
+library(rpart)
+
+
+```
+
+```{r}
+library(cowplot)
+library(mice)
+
+
+train <- read_excel("C:/Users/anfer/OneDrive/Desktop/Module 4/FinalProject/CSV/CSV/train.xlsx")
+
+test <- read_excel("C:/Users/anfer/OneDrive/Desktop/Module 4/FinalProject/CSV/CSV/test.xlsx")
+
+df_train <- train
+df_test <- test
+
+df_train |> head(10)
+
+```
+
+```{r}
+df_test |> head(10)
+```
+
+# Data dictionary:
+
+## Variable Definition Key
+
+-   **Survival**, Survival 0 = No, 1 = Yes
+-   **Pclass**, Ticket class 1 = 1st, 2 = 2nd, 3 = 3rd
+-   **Sex**, Sex
+-   **Age**, Age in years
+-   **Sibsp**, \# of siblings / spouses aboard the Titanic
+-   **Parch**, \# of parents / children aboard the Titanic
+-   **Ticket**, Ticket number
+-   **Fare**, Passenger fare
+-   **Cabin**, Cabin number
+-   **Embarked**, Port of Embarkation C = Cherbourg, Q = Queenstown, S = Southampton
+
+```{r}
+df_train |> describe() 
+```
+
+```{r}
+df_test |> describe()
+```
+
+```{r}
+## Renaming variables for better readability
+
+ df_train <- df_train |>
+  rename("siblings_spouses_aboard" = "SibSp",
+         "parents_children_aboard" = "Parch",
+         "port_of_embarkment" = "Embarked")
+```
+
+```{r}
+# doing the same on the test data
+
+df_test <- df_test |>
+  rename("siblings_spouses_aboard" = "SibSp",
+         "parents_children_aboard" = "Parch",
+         "port_of_embarkment" = "Embarked")
+```
+
+```{r}
+## changing character dtypes into factor
+
+df_train$Name <- as.factor(df_train$Name)
+
+df_train$Sex <- as.factor(df_train$Sex)
+
+df_train$Ticket <- as.factor(df_train$Ticket)
+
+df_train$Cabin <- as.factor(df_train$Cabin)
+
+df_train$port_of_embarkment <- as.factor(df_train$port_of_embarkment)
+
+
+
+df_test$Name <- as.factor(df_test$Name)
+
+df_test$Sex <- as.factor(df_test$Sex)
+
+df_test$Ticket <- as.factor(df_test$Ticket)
+
+df_test$Cabin <- as.factor(df_test$Cabin)
+
+df_test$port_of_embarkment <- as.factor(df_test$port_of_embarkment)
+
+
+
+
+
+```
+
+```{r}
+
+## Analyzing the dataset
+
+plot_intro(df_train)
+```
+
+```{r}
+plot_intro(df_test)
+```
+
+```{r missing values}
+## Viewing missing values
+
+vis_miss(df_train)
+```
+
+```{r}
+vis_miss(df_test)
+```
+
+```{r}
+visdat::vis_dat(df_train)
+```
+
+```{r}
+visdat::vis_dat(df_test)
+```
+
+
+# Missing values
+
+
+```{r}
+
+# 8.1% of the total training data set contain missing values, and 9% of the total test data set contain missing values. Cabin has 77% missing values, with Age having 20%.
+
+
+# dropping Name, Cabin, PassengerID and Ticket because they'll have no influence on the prediction of the target variable.
+
+df_train <- df_train |> select(-Cabin, -Name, -Ticket)
+
+df_test <- df_test |> select(-Cabin, -Name, -Ticket)
+
+```
+
+```{r}
+plot_density(df_train)
+```
+
+```{r focusing on Age}
+
+plot_density(df_train$Age)
+
+```
+
+## Exploring different methods of imputation
+
+```{r using simputation on Age}
+
+# Iteration #1
+
+Age_imp <- df_train |>
+  bind_shadow() |>
+  impute_lm(Age ~ Pclass) |>
+  add_label_shadow()
+
+ggplot(Age_imp,
+       aes(x = Age,
+           fill = any_missing)) + 
+  geom_density(alpha = 0.3) + 
+  scale_fill_brewer(palette = "Dark2") +
+  theme(legend.position = "bottom")
+```
+
+```{r}
+
+#Iteration #2
+# adding all other features to the imputation
+
+Age_imp <- df_train |>
+  bind_shadow() |>
+  impute_lm(Age ~ Pclass + Sex + Fare + port_of_embarkment + siblings_spouses_aboard) |>
+  add_label_shadow()
+
+ggplot(Age_imp,
+       aes(x = Age,
+           fill = any_missing)) + 
+  geom_density(alpha = 0.3) + 
+  scale_fill_brewer(palette = "Dark2") +
+  theme(legend.position = "bottom")
+
+```
+
+```{r }
+#Iteration #3
+
+# creating a data frame with imputed values and creating a plot that compares it to the original data
+
+
+Age_imp <- data.frame(
+  original = df_train$Age,
+  imputed_zero = replace(df_train$Age, is.na(df_train$Age), 0),
+  imputed_mean = replace(df_train$Age, is.na(df_train$Age), mean(df_train$Age, na.rm = TRUE)),
+  imputed_median = replace(df_train$Age, is.na(df_train$Age), median(df_train$Age, na.rm = TRUE))
+)
+
+
+
+
+h1 <- ggplot(Age_imp, aes(x = original)) +
+  geom_histogram(fill = "tomato", color = "#000000", position = "identity", bins = 50) +
+  ggtitle("Original distribution") +
+  theme_classic()
+
+h2 <- ggplot(Age_imp, aes(x = imputed_zero)) +
+  geom_histogram(fill = "green", color = "#000000", position = "identity", bins = 50) +
+  ggtitle("Zero-imputed distribution") +
+  theme_classic()
+
+h3 <- ggplot(Age_imp, aes(x = imputed_mean)) +
+  geom_histogram(fill = "royalblue", color = "#000000", position = "identity", bins = 50) +
+  ggtitle("Mean-imputed distribution") +
+  theme_classic()
+
+h4 <- ggplot(Age_imp, aes(x = imputed_median)) +
+  geom_histogram(fill = "gold", color = "#000000", position = "identity", bins = 50) +
+  ggtitle("Median-imputed distribution") +
+  theme_classic()
+
+plot_grid(h1, h2, h3, h4, nrow = 2, ncol = 2)
+
+```
+
+## All of the above distributions were severely impacted when compared to the original distribution.
+
+```{r using MICE}
+# iteration #4 using Multivariate Imputation via Chained Equations (MICE)
+
+numeric_cols <- df_train |>
+  select(Pclass, siblings_spouses_aboard, parents_children_aboard, Age)
+```
+
+```{r}
+mice_imp <- data.frame(
+  original = df_train$Age,
+  pmm_imp = complete(mice(numeric_cols, method = "pmm"))$Age,
+  cart_imp = complete(mice(numeric_cols, method = "cart"))$Age,
+  lasso_imp = complete(mice(numeric_cols, method = "lasso.norm"))$Age
+  
+)
+
+
+```
+
+```{r}
+
+mh1 <- ggplot(mice_imp, aes(x = original)) +
+  geom_histogram(fill = "tomato", color = "#000000", position = "identity", bins = 50) +
+  ggtitle("Original distribution") +
+  theme_classic()
+
+mh2 <- ggplot(mice_imp, aes(x = pmm_imp)) +
+  geom_histogram(fill = "green", color = "#000000", position = "identity", bins = 50) +
+  ggtitle("PMM-imputed distribution") +
+  theme_classic()
+
+mh3 <- ggplot(mice_imp, aes(x = cart_imp)) +
+  geom_histogram(fill = "royalblue", color = "#000000", position = "identity", bins = 50) +
+  ggtitle("CART-imputed distribution") +
+  theme_classic()
+
+mh4 <- ggplot(mice_imp, aes(x = lasso_imp)) +
+  geom_histogram(fill = "gold", color = "#000000", position = "identity", bins = 50) +
+  ggtitle("Lasso-imputed distribution") +
+  theme_classic()
+
+
+plot_grid(mh1, mh2, mh3, mh4, nrow = 2, ncol = 2)
+```
+
+## CART imputed Age distribution looks the closest to the original distribution
+
+```{r}
+#replacing values in age with imputed values from CART imputation 
+
+df_train$Age[is.na(df_train$Age)] <- mice_imp$cart_imp[is.na(df_train$Age)]
+
+df_test$Age[is.na(df_test$Age)] <- mice_imp$cart_imp[is.na(df_test$Age)]
+```
+
+```{r}
+# verifying change in distribution
+
+train_plt <- ggplot(df_train, aes(x = Age)) +
+  geom_histogram(fill = "gold", color = "#000000", position = "identity", bins = 50) +
+  ggtitle("imputed distribution") +
+  theme_classic()
+
+
+plot_grid(mh1, train_plt, ncol = 2, nrow = 1)
+
+```
+
+## Checking further missing values
+
+```{r}
+df_train |> describe()
+```
+
+```{r}
+df_test |> describe()
+```
+
+```{r}
+# dropping all missing rows
+
+df_train <- df_train |> drop_na()
+
+
+df_test <- df_test |> drop_na()
+
+```
+
+## Feature Creation
+
+```{r}
+# creating a column to distinguish between child and adult
+
+df_train <- df_train |> mutate(Child = if_else(df_train$Age >= 18, 'Adult','Child'))
+
+
+df_test <- df_test |> mutate(Child = if_else(df_test$Age >= 18, 'Adult','Child'))
+
+```
+
+```{r}
+# viewing how many children and adults survived
+
+table(df_train$Child, df_train$Survived)
+```
+
+
+
+```{r}
+
+# 474 and 75 Adults and children died respectively, while 277 and 65 Adults and Children survived, respectively.
+
+# changing Child column to factor
+
+df_train$Child <- as.factor(df_train$Child)
+
+df_test$Child <- as.factor(df_test$Child)
+
+
+```
+
+```{r}
+# creating a plot showing amount of children and adults that survived
+
+ggplot(data=df_train, aes(Child, fill = factor(Survived))) + 
+  geom_bar(stat = "count", position = "dodge") + 
+  xlab("Adults and Children") + 
+  scale_fill_discrete(name = "Survived") + 
+  ggtitle("Survivors by Number of Adults or Children")
+```
+
+```{r}
+# creating a relatives aboard variable
+
+df_train <- df_train |> mutate(Relatives_aboard = df_train$siblings_spouses_aboard + df_train$parents_children_aboard)
+
+df_test <- df_test |> mutate(Relatives_aboard = df_test$siblings_spouses_aboard + df_test$parents_children_aboard)
+
+```
+
+```{r}
+# discretizing the family size variable
+
+df_train$Family_size[df_train$Relatives_aboard == 1] <- 'Single'
+df_train$Family_size[df_train$Relatives_aboard < 5 & df_train$Relatives_aboard > 1] <- 'Small'
+df_train$Family_size[df_train$Relatives_aboard > 4] <- 'Large'
+df_train$Family_size[df_train$Relatives_aboard == 0] <- 'None'
+
+
+
+df_test$Family_size[df_test$Relatives_aboard == 1] <- 'Single'
+df_test$Family_size[df_test$Relatives_aboard < 5 & df_test$Relatives_aboard > 1] <- 'Small'
+df_test$Family_size[df_test$Relatives_aboard > 4] <- 'Large'
+df_test$Family_size[df_test$Relatives_aboard == 0] <- 'None'
+
+
+
+# changing data type to factor
+
+df_train$Family_size <- as.factor(df_train$Family_size)
+
+df_test$Family_size <- as.factor(df_test$Family_size)
+```
+
+```{r}
+# creating a plot of family size to view which category had the highest survival count
+
+ggplot(data=df_train, aes(Family_size, fill = factor(Survived))) + 
+  geom_bar(stat = "count", position = "dodge") + 
+  xlab("Family size") + 
+  scale_fill_discrete(name = "Survived") + 
+  ggtitle("Survivors by Family size")
+```
+
+```{r}
+# looking at the relationship of all the categorical features with survived
+
+plot_bar(df_train, by = "Survived")
+```
+
+
+
+## Correlation plots and feature importance
+
+```{r}
+
+# Women were more likely to survive then men
+
+# persons from port of embarkation C (Cherbourg) had a higher survival rate
+
+# more children (\< 18 y/o) survived than adults
+
+# Single and small (\<4) family sizes were more likely to survive
+
+
+# generating the pp (predictive power) score
+
+
+survived_ppsr_score <- df_train |>
+    score_predictors(y = 'Survived', do_parallel = TRUE) |> 
+  arrange(desc(pps)) |>
+    as_tibble() 
+
+survived_ppsr_score |> glimpse()
+
+```
+
+```{r}
+# visualizing the pps (predictive power score)
+
+df_train |> visualize_pps(y = "Survived", do_parallel = TRUE)
+
+
+```
+
+
+
+```{r}
+# Sex has the highest pp score, while relatives_aboard, family size, Pclass and Fare have lower pp scores
+
+#plotting a pps matrix to expand on feature relationships
+
+g <- df_train |>
+    visualize_pps(do_parallel = TRUE)
+
+g +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+```{r}
+# utilizing a correlation funnel which is a binary version of the correlation matrix
+
+survived_binned_tbl <- df_train |>
+    binarize()
+
+
+
+survived_binned_tbl |>
+    correlate(target = Survived__1) |>
+    plot_correlation_funnel() +
+    geom_point(size = 3, color = "black")
+
+
+
+```
+
+
+## Modelling
+
+
+```{r}
+# Sex = Female, Pclass = 1, Fare \> \$31, Family_size = small and port_of_embarkment = C are all positively related to survived = 1.
+
+
+set.seed(27)
+
+X_train_split <- initial_split(df_train, prop = 0.7)
+
+X_train <- training(X_train_split)
+
+X_test <- testing(X_train_split)
+
+
+
+```
+
+
+
+```{r}
+
+# using random forest to fit model on cross validation set
+
+X_train_rf <- X_train[c("Sex", "Family_size", "Pclass", "Fare", "PassengerId")]
+y_rf <- as.factor(X_train$Survived)
+
+set.seed(27)
+rf <- randomForest(x = X_train_rf, y = y_rf, importance = TRUE, ntree = 1000)
+
+rf
+
+```
+
+
+```{r}
+X_test_submit <- X_test[c("Sex", "Family_size", "Pclass", "Fare", "PassengerId")]
+
+X_test_submit
+```
+
+```{r}
+# forming a prediction on the Cross Validation test set
+
+rf_CV_pred <- predict(rf, X_test_submit)
+
+table(rf_CV_pred)
+
+```
+```{r}
+# creating a data frame and writing it to csv
+
+CV_pred <- data.frame(PassengerId = X_test_submit$PassengerId, Survived = rf_CV_pred) |> arrange(PassengerId)
+
+write.csv(CV_pred, row.names = F, file = "CV_Prediction.csv")
+
+```
+
+```{r}
+# generating a confusion matrix between CV predicted and actual Survived values
+
+library(caret)
+
+cf_tab <- table(rf_CV_pred, X_test$Survived)
+
+cm <- caret::confusionMatrix(cf_tab)
+
+cm
+```
+
+
+```{r}
+# predicting on test set and exporting prediction as a csv
+
+rf_pred1 <- predict(rf, df_test)
+
+rf_predict <- data.frame(PassengerId = df_test$PassengerId, Survived = rf_pred1)
+
+write.csv(rf_predict, row.names = F, file = "RF_Group_Prediction.csv")
+
+
+```
+
+
